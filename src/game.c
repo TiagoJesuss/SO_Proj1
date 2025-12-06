@@ -3,6 +3,8 @@
 #include <stdlib.h>
 #include <time.h>
 #include <unistd.h>
+#include <dirent.h>
+#include <fcntl.h>
 
 #define CONTINUE_PLAY 0
 #define NEXT_LEVEL 1
@@ -72,6 +74,30 @@ int main(int argc, char** argv) {
         printf("Usage: %s <level_directory>\n", argv[0]);
         // TODO receive inputs
     }
+    /**
+     * Abre a diretoria de níveis e tenta abrir cada ficheiro para garantir que são válidos
+     * Ainda não está implementado
+     */
+    DIR *dir = opendir(argv[1]);
+    if (dir == NULL) {
+        return 1;
+    }
+    struct dirent *entry;
+    int i = 0;
+    while ((entry = readdir(dir)) != NULL) { // Lê cada ficheiro na diretoria
+        if (i++ < 2) continue;
+        char* path = malloc(strlen(argv[1]) + strlen(entry->d_name) + 2);
+        sprintf(path, "%s/%s", argv[1], entry->d_name);
+        debug("Found level file: %s\n", path);
+        int f = open(path, O_RDONLY); // Tenta abrir o ficheiro
+        if (f < 0) {
+            debug("Failed to open file: %s\n", path);
+            free(path);
+            continue;
+        }
+        close(f);
+    }
+    closedir(dir);
 
     // Random seed for any random movements
     srand((unsigned int)time(NULL));
