@@ -59,6 +59,14 @@ typedef struct {
     int tempo;              // Duration of each play
 } board_t;
 
+typedef struct {
+    int width, height;
+    int tempo;
+    char pacman_file[MAX_FILENAME];
+    char ghost_files[MAX_GHOSTS][MAX_FILENAME];
+    char *board;
+} level_info;
+
 /*Makes the current thread sleep for 'int milliseconds' miliseconds*/
 void sleep_ms(int milliseconds);
 
