@@ -70,6 +70,33 @@ int play_board(board_t * game_board) {
     return CONTINUE_PLAY;  
 }
 
+void process_board(board_pos_t *board, char *board_str, int height, int width) {
+    for (int i = 0; i < height; i++) {
+        for (int j = 0; j < width; j++) {
+            int index = i * width + j;
+            char ch = board_str[index];
+            switch (ch) {
+                case 'X': // Wall
+                    board[index].content = 'W';
+                    board[index].has_dot = 0;
+                    board[index].has_portal = 0;
+                    break;
+                case 'o': // Free space
+                    board[index].content = ' ';
+                    board[index].has_dot = 0;
+                    board[index].has_portal = 0;
+                    break;
+                case '@': // Portal
+                    board[index].content = ' ';
+                    board[index].has_dot = 0;
+                    board[index].has_portal = 1;
+                    break;
+            }
+
+        }
+    }
+}
+
 level_info getLevelInfo(char *level_file) {
     level_info info;
     int f = open(level_file, O_RDONLY);
@@ -93,40 +120,70 @@ level_info getLevelInfo(char *level_file) {
         fileInfoSize += bytes_read;
     }
     close(f);
-    char *line = strtok(fileInfo, "\n");
+    char *filename = strrchr(level_file, '/');
+    if (filename != NULL) {
+        filename++;
+    }
+    char *dot = strrchr(filename, '.');
+    if (dot != NULL) {
+        *dot = '\0'; 
+    }
+    strncpy(info.name, filename, MAX_FILENAME - 1);
+    char *board = NULL;
+    char *saveptr_line; // Estado para strtok_r
+    char *line = strtok_r(fileInfo, "\n", &saveptr_line);
     while (line != NULL) {
+        debug("LINE: %s\n", line);
         if (strncmp(line, "DIM", 3) == 0) {
             sscanf(line, "DIM %d %d", &info.width, &info.height);
-            info.board = malloc(sizeof(char) * (info.width+1) * info.height + 1);
+            info.board = malloc(sizeof(board_pos_t) * (info.width * info.height + 1));
+            board = malloc(info.width * info.height + 1);
+            board[0] = '\0';
         } else if (strncmp(line, "TEMPO", 5) == 0) {
             sscanf(line, "TEMPO %d", &info.tempo);
         } else if (strncmp(line, "PAC", 3) == 0) {
             sscanf(line, "PAC %s", info.pacman_file);
         } else if (strncmp(line, "MON", 3) == 0) {
             static int ghost_index = 0;
-            char *token = strtok(line + 4, " "); 
+            char *saveptr_token; // Estado para strtok_r dentro da linha
+            char *token = strtok_r(line + 4, " ", &saveptr_token);
             while (token != NULL) {
-            if (ghost_index >= MAX_GHOSTS) { 
-                break;
+                debug("GHOST FILE: %s\n", token);
+                if (ghost_index >= MAX_GHOSTS) { 
+                    break;
+                }
+                strncpy(info.ghost_files[ghost_index], token, MAX_FILENAME - 1);
+                info.ghost_files[ghost_index][MAX_FILENAME - 1] = '\0'; 
+                ghost_index++;
+                token = strtok_r(NULL, " ", &saveptr_token);
             }
-            strncpy(info.ghost_files[ghost_index], token, MAX_FILENAME - 1);
-            info.ghost_files[ghost_index][MAX_FILENAME - 1] = '\0'; 
-            ghost_index++;
-            token = strtok(NULL, " ");
-            }
-        } else if ((strncmp(line, "X", 1) == 0) || (strncmp(line, "o", 1) == 0) || (strncmp(line, "@", 1) == 0)) {
-            strcat(info.board, line);
-            strcat(info.board, "\n");
-            line = strtok(NULL, "\n");
+            debug("LINE: %s\n", line);
+            info.n_ghosts = ghost_index;
+        } else if (strncmp(line, "#", 1) == 0) {
+            line = strtok_r(NULL, "\n", &saveptr_line);
+            continue;
+        } else {
+            int xyz = 0;
+            debug("%d", xyz++);
+            strcat(board, line);
+            debug("%d", xyz++);
+            line = strtok_r(NULL, "\n", &saveptr_line);
+            debug("%d", xyz++);
             while (line != NULL) {
-                strcat(info.board, line);
-                strcat(info.board, "\n");
-                line = strtok(NULL, "\n");
+                debug("%d", xyz++);
+                strcat(board, line);
+                line = strtok_r(NULL, "\n", &saveptr_line);
+                debug("%d", xyz++);
             }
+            debug("%d", xyz++);
+            process_board(info.board, board, info.height, info.width);
+            debug("%d", xyz++);
             break;
             
         }
-        line = strtok(NULL, "\n");
+        line = strtok_r(NULL, "\n", &saveptr_line);
+        debug("NEXT LINE: %s\n", line);
+        
     }
     free(fileInfo);
     return info;
@@ -181,6 +238,7 @@ int main(int argc, char** argv) {
         printf("Usage: %s <level_directory>\n", argv[0]);
         // TODO receive inputs
     }
+    open_debug_file("debug.log");
     level_info level_info[MAX_LEVELS];
     char *pacman_files[MAX_LEVELS];
     char *ghost_files[MAX_GHOSTS];
@@ -189,7 +247,7 @@ int main(int argc, char** argv) {
     // Random seed for any random movements
     srand((unsigned int)time(NULL));
 
-    open_debug_file("debug.log");
+    
 
     terminal_init();
     
@@ -198,7 +256,7 @@ int main(int argc, char** argv) {
     board_t game_board;
     int lvl = 0;
     while (!end_game) {
-        load_level(&game_board, accumulated_points);
+        load_level(&game_board, accumulated_points, &level_info[lvl]);
         draw_board(&game_board, DRAW_MENU);
         refresh_screen();
 

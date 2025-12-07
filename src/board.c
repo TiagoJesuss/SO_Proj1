@@ -5,6 +5,7 @@
 #include <unistd.h>
 #include <stdarg.h>
 #include <stdarg.h>
+#include <string.h>
 
 FILE * debugfile;
 
@@ -376,20 +377,22 @@ int load_ghost(board_t* board) {
     return 0;
 }
 
-int load_level(board_t *board, int points) {
-    board->height = 5;
-    board->width = 10;
-    board->tempo = 10;
+int load_level(board_t *board, int points, level_info *info) {
+    board->height = info->height;
+    board->width = info->width;
+    board->tempo = info->tempo;
 
-    board->n_ghosts = 2;
+    board->n_ghosts = info->n_ghosts;
     board->n_pacmans = 1;
 
     board->board = calloc(board->width * board->height, sizeof(board_pos_t));
     board->pacmans = calloc(board->n_pacmans, sizeof(pacman_t));
     board->ghosts = calloc(board->n_ghosts, sizeof(ghost_t));
 
-    sprintf(board->level_name, "Static Level");
-
+    //sprintf(board->level_name, info->name);
+    strcpy(board->level_name, info->name);
+    board->board = info->board;
+    /*
     for (int i = 0; i < board->height; i++) {
         for (int j = 0; j < board->width; j++) {
             if (i == 0 || j == 0 || j == (board->width - 1)) {
@@ -405,6 +408,7 @@ int load_level(board_t *board, int points) {
             }
         }
     }
+    */
 
     load_ghost(board);
     load_pacman(board, points);

@@ -60,11 +60,13 @@ typedef struct {
 } board_t;
 
 typedef struct {
+    char name[MAX_FILENAME];
     int width, height;
     int tempo;
     char pacman_file[MAX_FILENAME];
     char ghost_files[MAX_GHOSTS][MAX_FILENAME];
-    char *board;
+    board_pos_t *board;
+    int n_ghosts;
 } level_info;
 
 /*Makes the current thread sleep for 'int milliseconds' miliseconds*/
@@ -86,7 +88,7 @@ int load_pacman(board_t* board, int points);
 int load_ghost(board_t* board);
 
 /*Loads a level into board*/
-int load_level(board_t* board, int accumulated_points);
+int load_level(board_t* board, int accumulated_points, level_info* info);
 
 /*Unloads levels loaded by load_level*/
 void unload_level(board_t * board);
