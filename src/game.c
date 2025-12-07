@@ -5,6 +5,7 @@
 #include <unistd.h>
 #include <dirent.h>
 #include <fcntl.h>
+#include <string.h>
 
 #define CONTINUE_PLAY 0
 #define NEXT_LEVEL 1
@@ -88,10 +89,8 @@ int main(int argc, char** argv) {
         if (i++ < 2) continue;
         char* path = malloc(strlen(argv[1]) + strlen(entry->d_name) + 2);
         sprintf(path, "%s/%s", argv[1], entry->d_name);
-        debug("Found level file: %s\n", path);
         int f = open(path, O_RDONLY); // Tenta abrir o ficheiro
         if (f < 0) {
-            debug("Failed to open file: %s\n", path);
             free(path);
             continue;
         }
