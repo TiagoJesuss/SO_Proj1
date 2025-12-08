@@ -4,6 +4,8 @@
 #include <time.h>
 #include <unistd.h>
 #include <stdarg.h>
+#include <stdarg.h>
+#include <string.h>
 
 FILE * debugfile;
 
@@ -333,17 +335,28 @@ void kill_pacman(board_t* board, int pacman_index) {
 }
 
 // Static Loading
-int load_pacman(board_t* board, int points) {
-    board->board[1 * board->width + 1].content = 'P'; // Pacman
-    board->pacmans[0].pos_x = 1;
-    board->pacmans[0].pos_y = 1;
-    board->pacmans[0].alive = 1;
-    board->pacmans[0].points = points;
+int load_pacman(board_t* board, int points, level_info *info) {
+    if (info->has_pacman == 1) {
+        board->board[info->pacman_info.pos_y * board->width + info->pacman_info.pos_x].content = 'P'; // Pacman
+        board->pacmans[0].pos_x = info->pacman_info.pos_x;
+        board->pacmans[0].pos_y = info->pacman_info.pos_y;
+        board->pacmans[0].alive = 1;
+        board->pacmans[0].points = points;
+        return 0;
+    } else {
+        board->board[1 * board->width + 1].content = 'P'; // Pacman
+        board->pacmans[0].pos_x = 1;
+        board->pacmans[0].pos_y = 1;
+        board->pacmans[0].alive = 1;
+        board->pacmans[0].points = points;
+    }
+
     return 0;
 }
 
 // Static Loading
-int load_ghost(board_t* board) {
+int load_ghost(board_t* board, pac_ghost_info *info) {
+    /*
     // Ghost 0
     board->board[3 * board->width + 1].content = 'M'; // Monster
     board->ghosts[0].pos_x = 1;
@@ -371,24 +384,50 @@ int load_ghost(board_t* board) {
     board->ghosts[1].n_moves = 1;
     board->ghosts[1].moves[0].command = 'R'; // Random
     board->ghosts[1].moves[0].turns = 1; 
-    
+    */
+
+    for (int i = 0; i < board->n_ghosts; i++) {
+        board->board[info[i].pos_y * board->width + info[i].pos_x].content = 'M'; // Monster
+        board->ghosts[i].pos_x = info[i].pos_x;
+        board->ghosts[i].pos_y = info[i].pos_y;
+        board->ghosts[i].passo = info[i].passo;
+        board->ghosts[i].waiting = 0;
+        board->ghosts[i].current_move = 0;
+
+        // Copy moves
+        int move_count = 0;
+        while (move_count < MAX_MOVES && info[i].moves[move_count].command != '\0') {
+            board->ghosts[i].moves[move_count] = info[i].moves[move_count];
+            move_count++;
+        }
+        board->ghosts[i].n_moves = move_count;
+    }
+
     return 0;
 }
 
-int load_level(board_t *board, int points) {
-    board->height = 5;
-    board->width = 10;
-    board->tempo = 10;
+int load_level(board_t *board, int points, level_info *info) {
+    board->height = info->height;
+    board->width = info->width;
+    board->tempo = info->tempo;
 
-    board->n_ghosts = 2;
+    board->n_ghosts = info->n_ghosts;
     board->n_pacmans = 1;
+
+    for (int i = 0; i < board->n_ghosts; i++) {
+        strcpy(board->ghosts_files[i], info->ghost_files[i]);
+    }
+
+    if (info->has_pacman) strcpy(board->pacman_file, info->pacman_file);
 
     board->board = calloc(board->width * board->height, sizeof(board_pos_t));
     board->pacmans = calloc(board->n_pacmans, sizeof(pacman_t));
     board->ghosts = calloc(board->n_ghosts, sizeof(ghost_t));
 
-    sprintf(board->level_name, "Static Level");
-
+    //sprintf(board->level_name, info->name);
+    strcpy(board->level_name, info->file_name);
+    board->board = info->board;
+    /*
     for (int i = 0; i < board->height; i++) {
         for (int j = 0; j < board->width; j++) {
             if (i == 0 || j == 0 || j == (board->width - 1)) {
@@ -404,9 +443,10 @@ int load_level(board_t *board, int points) {
             }
         }
     }
+    */
 
-    load_ghost(board);
-    load_pacman(board, points);
+    load_ghost(board, info->ghosts_info);
+    load_pacman(board, points, info);
 
     return 0;
 }
