@@ -6,6 +6,8 @@
 #include <dirent.h>
 #include <fcntl.h>
 #include <string.h>
+#include <sys/types.h> //adicionado
+#include <sys/wait.h>   //adicionado
 
 #define CONTINUE_PLAY 0
 #define NEXT_LEVEL 1
@@ -45,6 +47,9 @@ int play_board(board_t * game_board) {
     if (play->command == 'Q') {
         return QUIT_GAME;
     }
+    if (play->command == 'G'){
+        return CREATE_BACKUP;
+    }
 
     int result = move_pacman(game_board, 0, play);
     if (result == REACHED_PORTAL) {
@@ -53,8 +58,9 @@ int play_board(board_t * game_board) {
     }
 
     if(result == DEAD_PACMAN) {
-        return QUIT_GAME;
+        return LOAD_BACKUP;
     }
+
     for (int i = 0; i < game_board->n_ghosts; i++) {
         ghost_t* ghost = &game_board->ghosts[i];
         // avoid buffer overflow wrapping around with modulo of n_moves
@@ -63,7 +69,7 @@ int play_board(board_t * game_board) {
     }
 
     if (!game_board->pacmans[0].alive) {
-        return QUIT_GAME;
+        return LOAD_BACKUP;
     }      
 
     return CONTINUE_PLAY;  
@@ -308,6 +314,8 @@ int main(int argc, char** argv) {
     bool end_game = false;
     board_t game_board;
     int lvl = 0;
+    bool hasBackup = false;
+
     while (!end_game) {
         load_level(&game_board, accumulated_points, &level_info[lvl]);
         draw_board(&game_board, DRAW_MENU);
@@ -323,12 +331,45 @@ int main(int argc, char** argv) {
                 }
                 break;
             }
-
+            if(result == QUIT_GAME && hasBackup) {
+                _exit(1);
+            }
             if(result == QUIT_GAME) {
                 screen_refresh(&game_board, DRAW_GAME_OVER); 
                 sleep_ms(game_board.tempo);
                 end_game = true;
                 break;
+            }
+            if (result == LOAD_BACKUP && !hasBackup){
+                screen_refresh(&game_board, DRAW_GAME_OVER); 
+                sleep_ms(game_board.tempo);
+                end_game = true;
+                break;
+            } else if (result == LOAD_BACKUP){
+                _exit(0);
+            }
+
+            if (result == CREATE_BACKUP && !hasBackup){
+                pid_t pid, w;
+                int status;
+                hasBackup = true;
+                pid = fork(); //nao sei se é correto nao ter caos para o filho mas visto q executa o mm codigo
+                if (pid!= 0 && pid != -1){ // caso do pai
+                    w = waitpid(pid, &status, 0); // 0 representa esperar por todas as childs, pode ser mudado visto q so ha uma
+                    if (w == -1){
+                        perror("waitpid");
+                        exit(EXIT_FAILURE);
+                    }
+                    hasBackup = false;
+                    if (WIFEXITED(status)){ //se child terminar de forma correta(return true)
+                        if (WEXITSTATUS(status)){ //neste caso exit = 1 entra ca dentro
+                            screen_refresh(&game_board, DRAW_GAME_OVER); 
+                            sleep_ms(game_board.tempo);
+                            end_game = true;
+                            break;
+                        }
+                    }
+                }
             }
     
             screen_refresh(&game_board, DRAW_MENU); 
