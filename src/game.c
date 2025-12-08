@@ -55,7 +55,6 @@ int play_board(board_t * game_board) {
     if(result == DEAD_PACMAN) {
         return QUIT_GAME;
     }
-    
     for (int i = 0; i < game_board->n_ghosts; i++) {
         ghost_t* ghost = &game_board->ghosts[i];
         // avoid buffer overflow wrapping around with modulo of n_moves
@@ -83,7 +82,7 @@ void process_board(board_pos_t *board, char *board_str, int height, int width) {
                     break;
                 case 'o': // Free space
                     board[index].content = ' ';
-                    board[index].has_dot = 0;
+                    board[index].has_dot = 1;
                     board[index].has_portal = 0;
                     break;
                 case '@': // Portal
@@ -97,43 +96,113 @@ void process_board(board_pos_t *board, char *board_str, int height, int width) {
     }
 }
 
-level_info getLevelInfo(char *level_file) {
-    level_info info;
-    int f = open(level_file, O_RDONLY);
+char* readFile (char *file) {
+    int f = open(file, O_RDONLY);
+    debug("Opening file: %s\n", file);
     if (f < 0) {
         exit(EXIT_FAILURE);
     }
+    debug("File %s opened successfully\n", file);
     ssize_t bytes_read;
     char buffer[1024];
-    size_t fileInfoSize = 0;
-    char *fileInfo = NULL;
+    size_t fileSize = 0;
+    char *fileContent = NULL;
     while ((bytes_read = read(f, buffer, sizeof(buffer)-1)) > 0) {
         buffer[bytes_read] = '\0'; // Garante que o buffer seja uma string válida
 
-        fileInfo = realloc(fileInfo, fileInfoSize + bytes_read + 1);
-        if (fileInfo == NULL) {
+        fileContent = realloc(fileContent, fileSize + bytes_read + 1);
+        debug("Reallocating fileContent to size: %zu\n", fileSize + bytes_read + 1);
+        if (fileContent == NULL) {
             close(f);
             exit(EXIT_FAILURE);
         }
+        debug("Reading %zd bytes from file\n", bytes_read);
 
-        memcpy(fileInfo + fileInfoSize, buffer, bytes_read + 1);
-        fileInfoSize += bytes_read;
+        memcpy(fileContent + fileSize, buffer, bytes_read + 1);
+        fileSize += bytes_read;
     }
     close(f);
-    char *filename = strrchr(level_file, '/');
+    return fileContent;
+}
+
+void build_command(command_t *command, char *line) {
+    sscanf(line, "%c", &command->command);
+    if (command->command == 'T') {
+        sscanf(line, "T %d", &command->turns);
+    } else {
+        command->turns = 1;
+    }
+}
+
+char* getFileName(char *file) {
+    char *filename = strrchr(file, '/');
     if (filename != NULL) {
-        filename++;
+        return filename + 1;
     }
-    char *dot = strrchr(filename, '.');
-    if (dot != NULL) {
-        *dot = '\0'; 
+    return file;
+}
+
+pac_ghost_info getPacGhostInfo(char *file) {
+    pac_ghost_info info;
+    debug("Reading PAC/GHOST info from file: %s\n", file);
+    char *fileInfo = readFile(file);
+    debug("PAC/GHOST FILE: %s\n", file);
+    strncpy(info.file_name, getFileName(file), MAX_FILENAME - 1);
+    debug("PAC/GHOST FILE NAME: %s\n", info.file_name);
+    char *saveptr_line; // Estado para strtok_r
+    char *line = strtok_r(fileInfo, "\n", &saveptr_line);
+    while (line != NULL) {
+        if (strncmp(line, "#", 1) == 0) {
+            line = strtok_r(NULL, "\n", &saveptr_line);
+            continue;
+        } else if (strncmp(line, "PASSO", 5) == 0) {
+            sscanf(line, "PASSO %d", &info.passo);
+            debug("PASSO: %d\n", info.passo);
+        } else if (strncmp(line, "POS", 3) == 0) {
+            sscanf(line, "POS %d %d", &info.pos_x, &info.pos_y);
+            debug("POS: %d %d\n", info.pos_x, info.pos_y);
+        } else {
+            int n_moves = 0;
+            while (line != NULL) {
+                debug("MOVE LINE: %s\n", line);
+                build_command(&info.moves[n_moves], line);
+                debug("MOVE[%d]: %c %d\n", n_moves, info.moves[n_moves].command, info.moves[n_moves].turns);
+                n_moves++;
+                line = strtok_r(NULL, "\n", &saveptr_line);
+            }
+            break;
+        }
+        line = strtok_r(NULL, "\n", &saveptr_line);
     }
-    strncpy(info.name, filename, MAX_FILENAME - 1);
+    free(fileInfo);
+    return info;
+}
+
+char* getPath(char *base_path, char *file_name) {
+    char *last_slash = strrchr(base_path, '/');
+    char *path;
+    if (last_slash != NULL) {
+        size_t dir_length = last_slash - base_path + 1; // +1 para incluir a barra
+        path = malloc(dir_length + strlen(file_name) + 1); // +1 para o terminador nulo
+        strncpy(path, base_path, dir_length);
+        path[dir_length] = '\0'; // Adiciona o terminador nulo
+        strcat(path, file_name);
+    } else {
+        path = malloc(strlen(file_name) + 1);
+        strcpy(path, file_name);
+    }
+    return path;
+}
+
+level_info getLevelInfo(char *level_file) {
+    level_info info;
+    info.has_pacman = 0;
+    char* fileInfo = readFile(level_file);
+    strncpy(info.file_name, getFileName(level_file), MAX_FILENAME - 1);
     char *board = NULL;
     char *saveptr_line; // Estado para strtok_r
     char *line = strtok_r(fileInfo, "\n", &saveptr_line);
     while (line != NULL) {
-        debug("LINE: %s\n", line);
         if (strncmp(line, "DIM", 3) == 0) {
             sscanf(line, "DIM %d %d", &info.width, &info.height);
             info.board = malloc(sizeof(board_pos_t) * (info.width * info.height + 1));
@@ -143,53 +212,49 @@ level_info getLevelInfo(char *level_file) {
             sscanf(line, "TEMPO %d", &info.tempo);
         } else if (strncmp(line, "PAC", 3) == 0) {
             sscanf(line, "PAC %s", info.pacman_file);
+            info.pacman_info = getPacGhostInfo(getPath(level_file, info.pacman_file));
+            debug("PACMAN POS: %d %d\n", info.pacman_info.pos_x, info.pacman_info.pos_y);
+            info.has_pacman = 1;
         } else if (strncmp(line, "MON", 3) == 0) {
-            static int ghost_index = 0;
+            int ghost_index = 0;
+            debug("GHOST FILES LINE: %s\n", line);
             char *saveptr_token; // Estado para strtok_r dentro da linha
             char *token = strtok_r(line + 4, " ", &saveptr_token);
             while (token != NULL) {
-                debug("GHOST FILE: %s\n", token);
                 if (ghost_index >= MAX_GHOSTS) { 
                     break;
                 }
                 strncpy(info.ghost_files[ghost_index], token, MAX_FILENAME - 1);
                 info.ghost_files[ghost_index][MAX_FILENAME - 1] = '\0'; 
+                debug("GHOST FILE[%d]: %s\n", ghost_index, info.ghost_files[ghost_index]);
+                info.ghosts_info[ghost_index] = getPacGhostInfo(getPath(level_file, info.ghost_files[ghost_index]));
+                debug("GHOST POS[%d]: %d %d\n", ghost_index, info.ghosts_info[ghost_index].pos_x, info.ghosts_info[ghost_index].pos_y);
                 ghost_index++;
                 token = strtok_r(NULL, " ", &saveptr_token);
             }
-            debug("LINE: %s\n", line);
             info.n_ghosts = ghost_index;
         } else if (strncmp(line, "#", 1) == 0) {
             line = strtok_r(NULL, "\n", &saveptr_line);
             continue;
         } else {
-            int xyz = 0;
-            debug("%d", xyz++);
             strcat(board, line);
-            debug("%d", xyz++);
             line = strtok_r(NULL, "\n", &saveptr_line);
-            debug("%d", xyz++);
             while (line != NULL) {
-                debug("%d", xyz++);
                 strcat(board, line);
                 line = strtok_r(NULL, "\n", &saveptr_line);
-                debug("%d", xyz++);
             }
-            debug("%d", xyz++);
             process_board(info.board, board, info.height, info.width);
-            debug("%d", xyz++);
             break;
             
         }
         line = strtok_r(NULL, "\n", &saveptr_line);
-        debug("NEXT LINE: %s\n", line);
         
     }
     free(fileInfo);
     return info;
 }
 
-int read_dir(char *argv, level_info *level_info, char *pacman_files[], char *ghost_files[]) {
+int read_dir(char *argv, level_info *level_info) {
     DIR *dir = opendir(argv);
     if (dir == NULL) {
         return 1;
@@ -197,8 +262,6 @@ int read_dir(char *argv, level_info *level_info, char *pacman_files[], char *gho
     struct dirent *entry;
     int i = 0;
     int x = 0;
-    int y = 0;
-    int z = 0;
     while ((entry = readdir(dir)) != NULL) { // Lê cada ficheiro na diretoria
         if (i++ < 2) continue;
         char* path = malloc(strlen(argv) + strlen(entry->d_name) + 2);
@@ -213,16 +276,6 @@ int read_dir(char *argv, level_info *level_info, char *pacman_files[], char *gho
             case 'l':
                 level_info[x] = getLevelInfo(path);
                 x++;
-                break;
-            case 'p':
-                pacman_files[y] = malloc(strlen(path) + 1);
-                strcpy(pacman_files[y], path);
-                y++;
-                break;
-            case 'm':
-                ghost_files[z] = malloc(strlen(path) + 1);
-                strcpy(ghost_files[z], path);
-                z++;
                 break;
             default:
                 break;
@@ -240,9 +293,9 @@ int main(int argc, char** argv) {
     }
     open_debug_file("debug.log");
     level_info level_info[MAX_LEVELS];
-    char *pacman_files[MAX_LEVELS];
-    char *ghost_files[MAX_GHOSTS];
-    int n_levels = read_dir(argv[1], level_info, pacman_files, ghost_files);
+    //pac_ghost_info pacman_info[MAX_LEVELS];
+    //pac_ghost_info ghosts_info[MAX_GHOSTS];
+    int n_levels = read_dir(argv[1], level_info);
 
     // Random seed for any random movements
     srand((unsigned int)time(NULL));
@@ -259,10 +312,8 @@ int main(int argc, char** argv) {
         load_level(&game_board, accumulated_points, &level_info[lvl]);
         draw_board(&game_board, DRAW_MENU);
         refresh_screen();
-
         while(true) {
             int result = play_board(&game_board); 
-
             if(result == NEXT_LEVEL) {
                 screen_refresh(&game_board, DRAW_WIN);
                 sleep_ms(game_board.tempo);

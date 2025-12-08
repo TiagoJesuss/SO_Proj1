@@ -60,13 +60,23 @@ typedef struct {
 } board_t;
 
 typedef struct {
-    char name[MAX_FILENAME];
+    int passo;
+    int pos_x, pos_y;
+    command_t moves[MAX_MOVES];
+    char file_name[MAX_FILENAME];
+} pac_ghost_info;
+
+typedef struct {
+    char file_name[MAX_FILENAME];
     int width, height;
     int tempo;
+    int has_pacman;
     char pacman_file[MAX_FILENAME];
     char ghost_files[MAX_GHOSTS][MAX_FILENAME];
     board_pos_t *board;
     int n_ghosts;
+    pac_ghost_info ghosts_info[MAX_GHOSTS];
+    pac_ghost_info pacman_info;
 } level_info;
 
 /*Makes the current thread sleep for 'int milliseconds' miliseconds*/
@@ -82,10 +92,10 @@ int move_ghost(board_t* board, int ghost_index, command_t* command);
 void kill_pacman(board_t* board, int pacman_index);
 
 /*Adds a pacman to the board*/
-int load_pacman(board_t* board, int points);
+int load_pacman(board_t* board, int points, level_info*info);
 
 /*Adds a ghost(monster) to the board*/
-int load_ghost(board_t* board);
+int load_ghost(board_t* board, pac_ghost_info* info);
 
 /*Loads a level into board*/
 int load_level(board_t* board, int accumulated_points, level_info* info);
