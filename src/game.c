@@ -1,5 +1,6 @@
 #include "board.h"
 #include "display.h"
+#include "threads.h"
 #include <stdlib.h>
 #include <time.h>
 #include <unistd.h>
@@ -8,6 +9,7 @@
 #include <string.h>
 #include <sys/types.h> //adicionado
 #include <sys/wait.h>   //adicionado
+#include <pthread.h>
 
 #define CONTINUE_PLAY 0
 #define NEXT_LEVEL 1
@@ -15,12 +17,111 @@
 #define LOAD_BACKUP 3
 #define CREATE_BACKUP 4
 
+pthread_mutex_t game_state_mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t ncurses_mutex = PTHREAD_MUTEX_INITIALIZER;
+
 void screen_refresh(board_t * game_board, int mode) {
     debug("REFRESH\n");
     draw_board(game_board, mode);
     refresh_screen();
     if(game_board->tempo != 0)
         sleep_ms(game_board->tempo);       
+}
+
+void *ghost_thread(void *arg) {
+    ghost_thread_args_t *args = (ghost_thread_args_t *)arg;
+    board_t *game_board = args->game_board;
+    int ghost_index = args->ghost_index;
+    bool *leave_thread = args->leave_thread;
+
+    ghost_t* ghost = &game_board->ghosts[ghost_index];
+    debug("STARTING GHOST THREAD %d, leave thread %d\n", ghost_index, *leave_thread);
+    while (*leave_thread == 0) {
+        debug("GHOST THREAD %d MOVE %d/%d\n", ghost_index, ghost->current_move, ghost->n_moves);
+        pthread_mutex_lock(&game_state_mutex);
+        move_ghost(game_board, ghost_index, &ghost->moves[ghost->current_move % ghost->n_moves]);
+        pthread_mutex_unlock(&game_state_mutex);
+
+        pthread_mutex_lock(&game_state_mutex);
+        screen_refresh(game_board, DRAW_MENU);
+        pthread_mutex_unlock(&game_state_mutex);
+
+        sleep_ms(game_board->tempo);
+    }
+    return NULL; 
+}
+
+void *pacman_thread(void *arg) {
+    pacman_thread_args_t *pacman_thread_args = (pacman_thread_args_t *)arg;
+    board_t *game_board = pacman_thread_args->game_board;
+    pacman_t *pacman = &game_board->pacmans[0];
+    int *result = pacman_thread_args->result;
+    bool *leave_thread = pacman_thread_args->leave_thread;
+
+    while (pacman->alive) {
+        command_t *play;
+
+        if (pacman->n_moves == 0) { // Se for entrada do usuário
+            command_t c;
+            c.command = get_input();
+
+            if (c.command == '\0') {
+                continue; // Sem entrada, continua
+            }
+
+            c.turns = 1;
+            play = &c;
+        } else { // Movimentos predefinidos
+            play = &pacman->moves[pacman->current_move % pacman->n_moves];
+        }
+
+        debug("KEY %c\n", play->command);
+
+        if (play->command == 'Q') {
+            pthread_mutex_lock(&game_state_mutex);
+            *result = QUIT_GAME;
+            *leave_thread = true;
+            pthread_mutex_unlock(&game_state_mutex);
+            break;
+        }
+        if (play->command == 'G'){
+            pthread_mutex_lock(&game_state_mutex);
+            *result = CREATE_BACKUP;
+            *leave_thread = true;
+            pthread_mutex_unlock(&game_state_mutex);
+            break;
+        }
+
+        pthread_mutex_lock(&game_state_mutex);
+        int move = move_pacman(game_board, 0, play);
+        pthread_mutex_unlock(&game_state_mutex);
+
+        if (move == REACHED_PORTAL) {
+            pthread_mutex_lock(&ncurses_mutex);
+            screen_refresh(game_board, DRAW_WIN);
+            *result = NEXT_LEVEL;
+            *leave_thread = true;
+            pthread_mutex_unlock(&ncurses_mutex);
+            break; // Pacman venceu
+        }
+
+        if (move == DEAD_PACMAN) {
+            pthread_mutex_lock(&ncurses_mutex);
+            screen_refresh(game_board, DRAW_GAME_OVER);
+            *result = LOAD_BACKUP;
+            *leave_thread = true;
+            pthread_mutex_unlock(&ncurses_mutex);
+            break; // Pacman morreu
+        }
+
+        pthread_mutex_lock(&ncurses_mutex);
+        screen_refresh(game_board, DRAW_MENU);
+        pthread_mutex_unlock(&ncurses_mutex);
+
+        sleep_ms(game_board->tempo); // Aguarda o tempo definido
+    }
+
+    return NULL;
 }
 
 int play_board(board_t * game_board) {
@@ -61,12 +162,22 @@ int play_board(board_t * game_board) {
         return LOAD_BACKUP;
     }
 
+    //pthread_t pacman_tid;
+    //pthread_create(&pacman_tid, NULL, pacman_thread, game_board);
+    //pthread_t ghost_threads[game_board->n_ghosts];
     for (int i = 0; i < game_board->n_ghosts; i++) {
         ghost_t* ghost = &game_board->ghosts[i];
         // avoid buffer overflow wrapping around with modulo of n_moves
         // this ensures that we always access a valid move for the ghost
         move_ghost(game_board, i, &ghost->moves[ghost->current_move%ghost->n_moves]);
+        //pthread_create(&ghost_threads[i], NULL, ghost_thread, &(ghost_thread_args_t){game_board, i});
     }
+    /*
+    pthread_join(pacman_tid, NULL);
+    for (int i = 0; i < game_board->n_ghosts; i++) {
+        pthread_join(ghost_threads[i], NULL);
+    }
+    */
 
     if (!game_board->pacmans[0].alive) {
         return LOAD_BACKUP;
@@ -104,11 +215,9 @@ void process_board(board_pos_t *board, char *board_str, int height, int width) {
 
 char* readFile (char *file) {
     int f = open(file, O_RDONLY);
-    debug("Opening file: %s\n", file);
     if (f < 0) {
         exit(EXIT_FAILURE);
     }
-    debug("File %s opened successfully\n", file);
     ssize_t bytes_read;
     char buffer[1024];
     size_t fileSize = 0;
@@ -117,12 +226,10 @@ char* readFile (char *file) {
         buffer[bytes_read] = '\0'; // Garante que o buffer seja uma string válida
 
         fileContent = realloc(fileContent, fileSize + bytes_read + 1);
-        debug("Reallocating fileContent to size: %zu\n", fileSize + bytes_read + 1);
         if (fileContent == NULL) {
             close(f);
             exit(EXIT_FAILURE);
         }
-        debug("Reading %zd bytes from file\n", bytes_read);
 
         memcpy(fileContent + fileSize, buffer, bytes_read + 1);
         fileSize += bytes_read;
@@ -150,11 +257,8 @@ char* getFileName(char *file) {
 
 pac_ghost_info getPacGhostInfo(char *file) {
     pac_ghost_info info;
-    debug("Reading PAC/GHOST info from file: %s\n", file);
     char *fileInfo = readFile(file);
-    debug("PAC/GHOST FILE: %s\n", file);
     strncpy(info.file_name, getFileName(file), MAX_FILENAME - 1);
-    debug("PAC/GHOST FILE NAME: %s\n", info.file_name);
     char *saveptr_line; // Estado para strtok_r
     char *line = strtok_r(fileInfo, "\n", &saveptr_line);
     while (line != NULL) {
@@ -163,16 +267,12 @@ pac_ghost_info getPacGhostInfo(char *file) {
             continue;
         } else if (strncmp(line, "PASSO", 5) == 0) {
             sscanf(line, "PASSO %d", &info.passo);
-            debug("PASSO: %d\n", info.passo);
         } else if (strncmp(line, "POS", 3) == 0) {
             sscanf(line, "POS %d %d", &info.pos_x, &info.pos_y);
-            debug("POS: %d %d\n", info.pos_x, info.pos_y);
         } else {
             int n_moves = 0;
             while (line != NULL) {
-                debug("MOVE LINE: %s\n", line);
                 build_command(&info.moves[n_moves], line);
-                debug("MOVE[%d]: %c %d\n", n_moves, info.moves[n_moves].command, info.moves[n_moves].turns);
                 n_moves++;
                 line = strtok_r(NULL, "\n", &saveptr_line);
             }
@@ -218,12 +318,12 @@ level_info getLevelInfo(char *level_file) {
             sscanf(line, "TEMPO %d", &info.tempo);
         } else if (strncmp(line, "PAC", 3) == 0) {
             sscanf(line, "PAC %s", info.pacman_file);
-            info.pacman_info = getPacGhostInfo(getPath(level_file, info.pacman_file));
-            debug("PACMAN POS: %d %d\n", info.pacman_info.pos_x, info.pacman_info.pos_y);
+            char *path = getPath(level_file, info.pacman_file);
+            info.pacman_info = getPacGhostInfo(path);
+            free(path);
             info.has_pacman = 1;
         } else if (strncmp(line, "MON", 3) == 0) {
             int ghost_index = 0;
-            debug("GHOST FILES LINE: %s\n", line);
             char *saveptr_token; // Estado para strtok_r dentro da linha
             char *token = strtok_r(line + 4, " ", &saveptr_token);
             while (token != NULL) {
@@ -232,9 +332,9 @@ level_info getLevelInfo(char *level_file) {
                 }
                 strncpy(info.ghost_files[ghost_index], token, MAX_FILENAME - 1);
                 info.ghost_files[ghost_index][MAX_FILENAME - 1] = '\0'; 
-                debug("GHOST FILE[%d]: %s\n", ghost_index, info.ghost_files[ghost_index]);
-                info.ghosts_info[ghost_index] = getPacGhostInfo(getPath(level_file, info.ghost_files[ghost_index]));
-                debug("GHOST POS[%d]: %d %d\n", ghost_index, info.ghosts_info[ghost_index].pos_x, info.ghosts_info[ghost_index].pos_y);
+                char *path = getPath(level_file, info.ghost_files[ghost_index]);
+                info.ghosts_info[ghost_index] = getPacGhostInfo(path);
+                free(path);
                 ghost_index++;
                 token = strtok_r(NULL, " ", &saveptr_token);
             }
@@ -250,6 +350,7 @@ level_info getLevelInfo(char *level_file) {
                 line = strtok_r(NULL, "\n", &saveptr_line);
             }
             process_board(info.board, board, info.height, info.width);
+            free(board);
             break;
             
         }
@@ -260,6 +361,15 @@ level_info getLevelInfo(char *level_file) {
     return info;
 }
 
+void *read_file_thread(void *arg) {
+    thread_args_t *args = (thread_args_t *)arg;
+
+    *(args->level_info) = getLevelInfo(args->path);
+
+    free(args);
+    return NULL;
+}
+
 int read_dir(char *argv, level_info *level_info) {
     DIR *dir = opendir(argv);
     if (dir == NULL) {
@@ -268,26 +378,45 @@ int read_dir(char *argv, level_info *level_info) {
     struct dirent *entry;
     int i = 0;
     int x = 0;
+
+    pthread_t threads[MAX_LEVELS];
+    int thread_count = 0;
+
     while ((entry = readdir(dir)) != NULL) { // Lê cada ficheiro na diretoria
         if (i++ < 2) continue;
-        char* path = malloc(strlen(argv) + strlen(entry->d_name) + 2);
-        sprintf(path, "%s/%s", argv, entry->d_name);
         const char *dot = strrchr(entry->d_name, '.');
         char extension[4] = "";
         if (dot != NULL && *(dot + 1) != '\0') {
             strncpy(extension, dot + 1, sizeof(extension) - 1); 
             extension[sizeof(extension) - 1] = '\0';
         }
-        switch (extension[0]) {
-            case 'l':
-                level_info[x] = getLevelInfo(path);
-                x++;
-                break;
-            default:
-                break;
+
+        if (extension[0] == 'l') {
+            //char *path = malloc(strlen(argv) + strlen(entry->d_name) + 2);
+            //sprintf(path, "%s/%s", argv, entry->d_name);
+
+            thread_args_t *args = malloc(sizeof(thread_args_t));
+            sprintf(args->path, "%s/%s", argv, entry->d_name);
+            args->level_info = &level_info[x];
+            
+            if (pthread_create(&threads[thread_count], NULL, read_file_thread, args) != 0) {
+                perror("pthread_create");
+                free(args);
+                continue;
+            }
+            
+            //level_info[x] = getLevelInfo(path);
+            thread_count++;
+            x++;
+            //free(path);
         }
-        free(path);
+        
     }
+    
+    for (int j = 0; j < thread_count; j++) {
+        pthread_join(threads[j], NULL);
+    }
+    
     closedir(dir);
     return x;
 }
@@ -299,8 +428,6 @@ int main(int argc, char** argv) {
     }
     open_debug_file("debug.log");
     level_info level_info[MAX_LEVELS];
-    //pac_ghost_info pacman_info[MAX_LEVELS];
-    //pac_ghost_info ghosts_info[MAX_GHOSTS];
     int n_levels = read_dir(argv[1], level_info);
 
     // Random seed for any random movements
@@ -315,20 +442,58 @@ int main(int argc, char** argv) {
     board_t game_board;
     int lvl = 0;
     bool hasBackup = false;
+    int result;
+    bool leave_thread = false;
+    /*
+    Ter a logica do while true dentro do thread do pacman e ter threads para os fantasmas
+    ter logica do play_board dentro do thread do pacman e ghosts
+    */
 
+    pacman_thread_args_t pacman_args;
+    pacman_args.result = &result;
+    pacman_args.leave_thread = &leave_thread;
+    pthread_t pacman_tid;
+
+    ghost_thread_args_t ghost_args[MAX_GHOSTS];
+    pthread_t ghost_tids[MAX_GHOSTS];
     while (!end_game) {
         load_level(&game_board, accumulated_points, &level_info[lvl]);
         draw_board(&game_board, DRAW_MENU);
         refresh_screen();
+        for (int i = 0; i < game_board.n_ghosts; i++) {
+            ghost_args[i].game_board = &game_board;
+            ghost_args[i].ghost_index = i;
+            ghost_args[i].leave_thread = &leave_thread;
+        }
+        pacman_args.game_board = &game_board;
         while(true) {
-            int result = play_board(&game_board); 
+            //int result = play_board(&game_board);
+            if (pthread_create(&pacman_tid, NULL, pacman_thread, &pacman_args) != 0) {
+                perror("pthread_create");
+                exit(EXIT_FAILURE);
+            }
+            for (int i = 0; i < game_board.n_ghosts; i++) {
+                if (pthread_create(&ghost_tids[i], NULL, ghost_thread, &ghost_args[i]) != 0) {
+                    perror("pthread_create");
+                    exit(EXIT_FAILURE);
+                }
+            }
+            pthread_join(pacman_tid, NULL);
+            debug("RESULT: %d\n", result);
+            for (int i = 0; i < game_board.n_ghosts; i++) {
+                pthread_join(ghost_tids[i], NULL);
+            }
             if(result == NEXT_LEVEL) {
-                screen_refresh(&game_board, DRAW_WIN);
-                sleep_ms(game_board.tempo);
                 lvl++;
                 if (lvl >= n_levels) {
+                    screen_refresh(&game_board, DRAW_WIN);
+                    if (hasBackup)
+                        _exit(1);
                     end_game = true;
+                } else {
+                    screen_refresh(&game_board, DRAW_MENU);
                 }
+                sleep_ms(game_board.tempo);
                 break;
             }
             if(result == QUIT_GAME && hasBackup) {
@@ -356,7 +521,7 @@ int main(int argc, char** argv) {
                 pid = fork(); //nao sei se é correto nao ter caos para o filho mas visto q executa o mm codigo
                 if (pid!= 0 && pid != -1){ // caso do pai
                     w = waitpid(pid, &status, 0); // 0 representa esperar por todas as childs, pode ser mudado visto q so ha uma
-                    if (w == -1){
+                    if (w == -1) {
                         perror("waitpid");
                         exit(EXIT_FAILURE);
                     }
@@ -378,8 +543,8 @@ int main(int argc, char** argv) {
         }
         print_board(&game_board);
         unload_level(&game_board);
-    }    
-
+    }
+    
     terminal_cleanup();
 
     close_debug_file();
