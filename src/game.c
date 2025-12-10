@@ -98,7 +98,7 @@ void *pacman_thread(void *arg) {
 
         if (move == REACHED_PORTAL) {
             pthread_mutex_lock(&ncurses_mutex);
-            screen_refresh(game_board, DRAW_WIN);
+            //screen_refresh(game_board, DRAW_WIN);
             *result = NEXT_LEVEL;
             *leave_thread = true;
             pthread_mutex_unlock(&ncurses_mutex);
@@ -107,7 +107,7 @@ void *pacman_thread(void *arg) {
 
         if (move == DEAD_PACMAN) {
             pthread_mutex_lock(&ncurses_mutex);
-            screen_refresh(game_board, DRAW_GAME_OVER);
+            //screen_refresh(game_board, DRAW_GAME_OVER);
             *result = LOAD_BACKUP;
             *leave_thread = true;
             pthread_mutex_unlock(&ncurses_mutex);
@@ -119,6 +119,12 @@ void *pacman_thread(void *arg) {
         pthread_mutex_unlock(&ncurses_mutex);
 
         sleep_ms(game_board->tempo); // Aguarda o tempo definido
+    }
+    if (!pacman->alive) {
+        pthread_mutex_lock(&game_state_mutex);
+        *result = LOAD_BACKUP;
+        *leave_thread = true;
+        pthread_mutex_unlock(&game_state_mutex);
     }
 
     return NULL;
@@ -483,13 +489,14 @@ int main(int argc, char** argv) {
             for (int i = 0; i < game_board.n_ghosts; i++) {
                 pthread_join(ghost_tids[i], NULL);
             }
+            leave_thread = false;
             if(result == NEXT_LEVEL) {
                 lvl++;
                 if (lvl >= n_levels) {
                     screen_refresh(&game_board, DRAW_WIN);
-                    if (hasBackup)
-                        _exit(1);
                     end_game = true;
+                    if (hasBackup)
+                        _exit(2);
                 } else {
                     screen_refresh(&game_board, DRAW_MENU);
                 }
@@ -527,8 +534,13 @@ int main(int argc, char** argv) {
                     }
                     hasBackup = false;
                     if (WIFEXITED(status)){ //se child terminar de forma correta(return true)
-                        if (WEXITSTATUS(status)){ //neste caso exit = 1 entra ca dentro
-                            screen_refresh(&game_board, DRAW_GAME_OVER); 
+                        if (WEXITSTATUS(status) == 1){ //neste caso exit = 1 entra ca dentro
+                            screen_refresh(&game_board, DRAW_GAME_OVER);
+                            sleep_ms(game_board.tempo);
+                            end_game = true;
+                            break;
+                        } else if (WEXITSTATUS(status) == 2){ //exit = 2
+                            screen_refresh(&game_board, DRAW_WIN);
                             sleep_ms(game_board.tempo);
                             end_game = true;
                             break;
