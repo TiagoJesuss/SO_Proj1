@@ -247,10 +247,9 @@ char* readFile (char *file) {
 void build_command(command_t *command, char *line) {
     sscanf(line, "%c", &command->command);
     if (command->command == 'T') {
-        sscanf(line, "T %d", &command->turns);
-    } else {
-        command->turns = 1;
+        sscanf(line, "T %d", &command->turns_left);
     }
+    command->turns = 1;
 }
 
 char* getFileName(char *file) {
