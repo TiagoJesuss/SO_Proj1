@@ -346,14 +346,9 @@ int load_pacman(board_t* board, int points, level_info *info) {
         board->pacmans[0].waiting = 0;
         board->pacmans[0].current_move = 0;
         board->pacmans[0].n_moves = info->pacman_info.n_moves;
-        int move_count = 0;
-        while (move_count < MAX_MOVES && info->pacman_info.moves[move_count].command != '\0' && move_count<info->pacman_info.n_moves) {
-            board->pacmans[0].moves[move_count] = info->pacman_info.moves[move_count];
-            move_count++;
+        for (int j = 0; j < board->pacmans[0].n_moves; j++) {
+            board->pacmans[0].moves[j] = info->pacman_info.moves[j];
         }
-        board->pacmans[0].n_moves = move_count;
-
-        //return 0;
     } else {
         board->board[1 * board->width + 1].content = 'P'; // Pacman
         board->pacmans[0].pos_x = 1;
@@ -375,16 +370,9 @@ int load_ghost(board_t* board, pac_ghost_info *info) {
         board->ghosts[i].waiting = 0;
         board->ghosts[i].current_move = 0;
         board->ghosts[i].n_moves = info[i].n_moves;
-        //int j =  board->ghosts[i].n_moves;
-        // Copy moves
-        int move_count = 0;
-        debug("maxmoes: %d\n", MAX_MOVES);
-        while (move_count < MAX_MOVES && info[i].moves[move_count].command != '\0' && move_count < info[i].n_moves) {
-            board->ghosts[i].moves[move_count] = info[i].moves[move_count]; //isto ta mal feito
-            move_count++;
-            debug("movecount: %d", move_count);
+        for (int j = 0; j < board->ghosts[i].n_moves; j++) {
+            board->ghosts[i].moves[j] = info[i].moves[j];
         }
-        board->ghosts[i].n_moves = move_count;
     }
 
     return 0;
@@ -408,26 +396,8 @@ int load_level(board_t *board, int points, level_info *info) {
     board->pacmans = calloc(board->n_pacmans, sizeof(pacman_t));
     board->ghosts = calloc(board->n_ghosts, sizeof(ghost_t));
 
-    //sprintf(board->level_name, info->name);
     strcpy(board->level_name, info->file_name);
     board->board = info->board;
-    /*
-    for (int i = 0; i < board->height; i++) {
-        for (int j = 0; j < board->width; j++) {
-            if (i == 0 || j == 0 || j == (board->width - 1)) {
-                board->board[i * board->width + j].content = 'W';
-            }
-            else if (i == 4 && j == 8) {
-                board->board[i * board->width + j].content = ' ';
-                board->board[i * board->width + j].has_portal = 1;
-            }
-            else {
-                board->board[i * board->width + j].content = ' ';
-                board->board[i * board->width + j].has_dot = 1;
-            }
-        }
-    }
-    */
 
     load_ghost(board, info->ghosts_info);
     load_pacman(board, points, info);

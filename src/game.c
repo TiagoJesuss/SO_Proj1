@@ -37,9 +37,7 @@ void *ghost_thread(void *arg) {
     //pthread_mutex_t ncurses_mutex = PTHREAD_MUTEX_INITIALIZER;
 
     ghost_t* ghost = &game_board->ghosts[ghost_index];
-    debug("STARTING GHOST THREAD %d, leave thread %d\n", ghost_index, *leave_thread);
     while (*leave_thread == 0) {
-        debug("GHOST THREAD %d MOVE %d/%d\n", ghost_index, ghost->current_move, ghost->n_moves);
         pthread_mutex_lock(args->mutex);
         //pthread_rwlock_wrlock(args->lock);
         move_ghost(game_board, ghost_index, &ghost->moves[ghost->current_move % ghost->n_moves]);
@@ -92,6 +90,7 @@ void *pacman_thread(void *arg) {
                 
             }
             play = &pacman->moves[pacman->current_move % pacman->n_moves];
+            debug("MOVE %d - %c\n", pacman->current_move % pacman->n_moves, play->command);
         }
 
         debug("KEY %c\n", play->command);
@@ -107,6 +106,7 @@ void *pacman_thread(void *arg) {
             pthread_mutex_lock(args->mutex);
             *result = CREATE_BACKUP;
             *leave_thread = true;
+            pacman->current_move++;
             pthread_mutex_unlock(args->mutex);
             break;
         }
@@ -236,18 +236,15 @@ pac_ghost_info getPacGhostInfo(char *file) { //esqueceu se de atribuir nmoves
             sscanf(line, "POS %d %d", &info.pos_x, &info.pos_y);
         } else {
             int n_moves = 0;
-            while (line != NULL) {
+            while (line != NULL && n_moves < MAX_MOVES) {
                 build_command(&info.moves[n_moves], line);
                 n_moves++;
-                debug("nmoves: %d\n", n_moves);
                 line = strtok_r(NULL, "\n", &saveptr_line);
-                debug("line1: %s\n", line);
             }
             info.n_moves = n_moves;
             break;
         }
         line = strtok_r(NULL, "\n", &saveptr_line);
-        debug("line2: %s\n", line);
     }
     free(fileInfo);
     return info;
@@ -413,11 +410,6 @@ int main(int argc, char** argv) {
     bool hasBackup = false;
     int result;
     bool leave_thread = false;
-   // debug("ghostmoves: %d\n", game_board.ghosts[0].n_moves);
-    /*
-    Ter a logica do while true dentro do thread do pacman e ter threads para os fantasmas
-    ter logica do play_board dentro do thread do pacman e ghosts
-    */
 
     pacman_thread_args_t pacman_args;
     pacman_args.result = &result;
@@ -429,8 +421,6 @@ int main(int argc, char** argv) {
     pthread_t ghost_tids[MAX_GHOSTS];
     while (!end_game) {
         load_level(&game_board, accumulated_points, &level_info[lvl]);
-        debug("lvl: %d\n", lvl);
-        debug("nlvls: %d\n", n_levels);
         if (level_info[lvl].has_pacman){
             nodelay(stdscr, TRUE);
         }else{
@@ -459,7 +449,6 @@ int main(int argc, char** argv) {
                 }
             }
             pthread_join(pacman_tid, NULL);
-            debug("RESULT: %d\n", result);
             for (int i = 0; i < game_board.n_ghosts; i++) {
                 pthread_join(ghost_tids[i], NULL);
             }
