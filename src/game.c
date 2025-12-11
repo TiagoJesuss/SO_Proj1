@@ -357,7 +357,6 @@ int read_dir(char *argv, level_info *level_info) {
                 free(args);
                 continue;
             }
-            
             thread_count++;
             x++;
         }
@@ -380,7 +379,6 @@ int main(int argc, char** argv) {
     open_debug_file("debug.log");
     level_info level_info[MAX_LEVELS];
     int n_levels = read_dir(argv[1], level_info);
-
     // Random seed for any random movements
     srand((unsigned int)time(NULL));
 
@@ -430,7 +428,6 @@ int main(int argc, char** argv) {
         draw_board(&game_board, DRAW_MENU);
         refresh_screen();
         while(true) {
-            //int result = play_board(&game_board);
             if (pthread_create(&ncurses_tid, NULL, ncurses_thread, &ncurses_thread_args) != 0) {
                 perror("pthread_create");
                 exit(EXIT_FAILURE);
@@ -514,6 +511,10 @@ int main(int argc, char** argv) {
         }
         print_board(&game_board);
         unload_level(&game_board);
+    }
+
+    for (int i = 0; i < n_levels; i++) {
+        free(level_info[i].board);
     }
     
     terminal_cleanup();
