@@ -22,7 +22,13 @@ typedef struct {
     int *result;
     bool *leave_thread;
     pthread_mutex_t *mutex;
+    pthread_rwlock_t *lock;
 } pacman_thread_args_t;
+
+typedef struct {
+    board_t *game_board;
+    bool *leave_thread;
+} ncurses_thread_args_t;
 
 void *ghost_thread(void *arg);
 

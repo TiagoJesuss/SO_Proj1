@@ -6,6 +6,7 @@
 #include <stdarg.h>
 #include <stdarg.h>
 #include <string.h>
+#include <pthread.h>
 
 FILE * debugfile;
 
@@ -99,11 +100,17 @@ int move_pacman(board_t* board, int pacman_index, command_t* command) {
     int old_index = get_board_index(board, pac->pos_x, pac->pos_y);
     char target_content = board->board[new_index].content;
 
+    pthread_rwlock_rdlock(&board->board[new_index].lock);
     if (board->board[new_index].has_portal) {
+        pthread_rwlock_unlock(&board->board[new_index].lock);
+        pthread_rwlock_wrlock(&board->board[old_index].lock);
         board->board[old_index].content = ' ';
+        pthread_rwlock_unlock(&board->board[old_index].lock);
+        pthread_rwlock_wrlock(&board->board[new_index].lock);
         board->board[new_index].content = 'P';
+        pthread_rwlock_unlock(&board->board[new_index].lock);
         return REACHED_PORTAL;
-    }
+    } else pthread_rwlock_unlock(&board->board[new_index].lock);
 
     // Check for walls
     if (target_content == 'W') {
@@ -117,15 +124,23 @@ int move_pacman(board_t* board, int pacman_index, command_t* command) {
     }
 
     // Collect points
+    pthread_rwlock_rdlock(&board->board[new_index].lock);
     if (board->board[new_index].has_dot) {
+        pthread_rwlock_unlock(&board->board[new_index].lock);
         pac->points++;
+        pthread_rwlock_wrlock(&board->board[new_index].lock);
         board->board[new_index].has_dot = 0;
-    }
+        pthread_rwlock_unlock(&board->board[new_index].lock);
+    } else pthread_rwlock_unlock(&board->board[new_index].lock);
 
+    pthread_rwlock_wrlock(&board->board[old_index].lock);
     board->board[old_index].content = ' ';
+    pthread_rwlock_unlock(&board->board[old_index].lock);
     pac->pos_x = new_x;
     pac->pos_y = new_y;
+    pthread_rwlock_wrlock(&board->board[new_index].lock);
     board->board[new_index].content = 'P';
+    pthread_rwlock_unlock(&board->board[new_index].lock);
 
     return VALID_MOVE;
 }
@@ -142,7 +157,10 @@ static int move_ghost_charged_direction(board_t* board, ghost_t* ghost, char dir
             if (y == 0) return INVALID_MOVE;
             *new_y = 0; // In case there is no colision
             for (int i = y - 1; i >= 0; i--) {
-                char target_content = board->board[get_board_index(board, x, i)].content;
+                int index = get_board_index(board, x, i);
+                pthread_rwlock_rdlock(&board->board[index].lock);
+                char target_content = board->board[index].content;
+                pthread_rwlock_unlock(&board->board[index].lock);
                 if (target_content == 'W' || target_content == 'M') {
                     *new_y = i + 1; // stop before colision
                     return VALID_MOVE;
@@ -158,7 +176,10 @@ static int move_ghost_charged_direction(board_t* board, ghost_t* ghost, char dir
             if (y == board->height - 1) return INVALID_MOVE;
             *new_y = board->height - 1; // In case there is no colision
             for (int i = y + 1; i < board->height; i++) {
-                char target_content = board->board[get_board_index(board, x, i)].content;
+                int index = get_board_index(board, x, i);
+                pthread_rwlock_rdlock(&board->board[index].lock);
+                char target_content = board->board[index].content;
+                pthread_rwlock_unlock(&board->board[index].lock);
                 if (target_content == 'W' || target_content == 'M') {
                     *new_y = i - 1; // stop before colision
                     return VALID_MOVE;
@@ -174,7 +195,10 @@ static int move_ghost_charged_direction(board_t* board, ghost_t* ghost, char dir
             if (x == 0) return INVALID_MOVE;
             *new_x = 0; // In case there is no colision
             for (int j = x - 1; j >= 0; j--) {
-                char target_content = board->board[get_board_index(board, j, y)].content;
+                int index = get_board_index(board, j, y);
+                pthread_rwlock_rdlock(&board->board[index].lock);
+                char target_content = board->board[index].content;
+                pthread_rwlock_unlock(&board->board[index].lock);
                 if (target_content == 'W' || target_content == 'M') {
                     *new_x = j + 1; // stop before colision
                     return VALID_MOVE;
@@ -190,7 +214,10 @@ static int move_ghost_charged_direction(board_t* board, ghost_t* ghost, char dir
             if (x == board->width - 1) return INVALID_MOVE;
             *new_x = board->width - 1; // In case there is no colision
             for (int j = x + 1; j < board->width; j++) {
-                char target_content = board->board[get_board_index(board, j, y)].content;
+                int index = get_board_index(board, j, y);
+                pthread_rwlock_rdlock(&board->board[index].lock);
+                char target_content = board->board[index].content;
+                pthread_rwlock_unlock(&board->board[index].lock);
                 if (target_content == 'W' || target_content == 'M') {
                     *new_x = j - 1; // stop before colision
                     return VALID_MOVE;
@@ -227,12 +254,16 @@ int move_ghost_charged(board_t* board, int ghost_index, char direction) {
     int new_index = get_board_index(board, new_x, new_y);
 
     // Update board - clear old position (restore what was there)
+    pthread_rwlock_wrlock(&board->board[old_index].lock);
     board->board[old_index].content = ' '; // Or restore the dot if ghost was on one
+    pthread_rwlock_unlock(&board->board[old_index].lock);
     // Update ghost position
     ghost->pos_x = new_x;
     ghost->pos_y = new_y;
     // Update board - set new position
+    pthread_rwlock_wrlock(&board->board[new_index].lock);
     board->board[new_index].content = 'M';
+    pthread_rwlock_unlock(&board->board[new_index].lock);
     return result;
 }
 
@@ -297,7 +328,9 @@ int move_ghost(board_t* board, int ghost_index, command_t* command) {
     // Check board position
     int new_index = get_board_index(board, new_x, new_y);
     int old_index = get_board_index(board, ghost->pos_x, ghost->pos_y);
+    pthread_rwlock_rdlock(&board->board[new_index].lock);
     char target_content = board->board[new_index].content;
+    pthread_rwlock_unlock(&board->board[new_index].lock);
 
     // Check for walls and ghosts
     if (target_content == 'W' || target_content == 'M') {
@@ -311,24 +344,29 @@ int move_ghost(board_t* board, int ghost_index, command_t* command) {
     }
 
     // Update board - clear old position (restore what was there)
+    pthread_rwlock_wrlock(&board->board[old_index].lock);
     board->board[old_index].content = ' '; // Or restore the dot if ghost was on one
+    pthread_rwlock_unlock(&board->board[old_index].lock);
 
     // Update ghost position
     ghost->pos_x = new_x;
     ghost->pos_y = new_y;
 
     // Update board - set new position
+    pthread_rwlock_wrlock(&board->board[new_index].lock);
     board->board[new_index].content = 'M';
+    pthread_rwlock_unlock(&board->board[new_index].lock);
     return result;
 }
 
 void kill_pacman(board_t* board, int pacman_index) {
-    debug("Killing %d pacman\n\n", pacman_index);
     pacman_t* pac = &board->pacmans[pacman_index];
     int index = pac->pos_y * board->width + pac->pos_x;
 
     // Remove pacman from the board
+    pthread_rwlock_wrlock(&board->board[index].lock);
     board->board[index].content = ' ';
+    pthread_rwlock_unlock(&board->board[index].lock);
 
     // Mark pacman as dead
     pac->alive = 0;
@@ -399,6 +437,10 @@ int load_level(board_t *board, int points, level_info *info) {
     strcpy(board->level_name, info->file_name);
     board->board = info->board;
 
+    for (int i = 0; i < board->width * board->height; i++) {
+        pthread_rwlock_init(&board->board[i].lock, NULL);
+    }
+
     load_ghost(board, info->ghosts_info);
     load_pacman(board, points, info);
 
@@ -406,6 +448,9 @@ int load_level(board_t *board, int points, level_info *info) {
 }
 
 void unload_level(board_t * board) {
+    for (int i = 0; i < board->width * board->height; i++) {
+        pthread_rwlock_destroy(&board->board[i].lock);
+    }
     free(board->board);
     free(board->pacmans);
     free(board->ghosts);
