@@ -1,7 +1,7 @@
 #ifndef BOARD_H
 #define BOARD_H
 
-#define MAX_MOVES 20
+#define MAX_MOVES 20 
 #define MAX_LEVELS 20
 #define MAX_FILENAME 256
 #define MAX_GHOSTS 25
@@ -62,6 +62,7 @@ typedef struct {
 typedef struct {
     int passo;
     int pos_x, pos_y;
+    int n_moves;
     command_t moves[MAX_MOVES];
     char file_name[MAX_FILENAME];
 } pac_ghost_info;
@@ -76,7 +77,7 @@ typedef struct {
     board_pos_t *board;
     int n_ghosts;
     pac_ghost_info ghosts_info[MAX_GHOSTS];
-    pac_ghost_info pacman_info;
+    pac_ghost_info pacman_info; //isto é usado?
 } level_info;
 
 /*Makes the current thread sleep for 'int milliseconds' miliseconds*/

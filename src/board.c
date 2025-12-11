@@ -342,7 +342,18 @@ int load_pacman(board_t* board, int points, level_info *info) {
         board->pacmans[0].pos_y = info->pacman_info.pos_y;
         board->pacmans[0].alive = 1;
         board->pacmans[0].points = points;
-        return 0;
+        board->pacmans[0].passo = info->pacman_info.passo;
+        board->pacmans[0].waiting = 0;
+        board->pacmans[0].current_move = 0;
+        board->pacmans[0].n_moves = info->pacman_info.n_moves;
+        int move_count = 0;
+        while (move_count < MAX_MOVES && info->pacman_info.moves[move_count].command != '\0' && move_count<info->pacman_info.n_moves) {
+            board->pacmans[0].moves[move_count] = info->pacman_info.moves[move_count];
+            move_count++;
+        }
+        board->pacmans[0].n_moves = move_count;
+
+        //return 0;
     } else {
         board->board[1 * board->width + 1].content = 'P'; // Pacman
         board->pacmans[0].pos_x = 1;
@@ -356,36 +367,6 @@ int load_pacman(board_t* board, int points, level_info *info) {
 
 // Static Loading
 int load_ghost(board_t* board, pac_ghost_info *info) {
-    /*
-    // Ghost 0
-    board->board[3 * board->width + 1].content = 'M'; // Monster
-    board->ghosts[0].pos_x = 1;
-    board->ghosts[0].pos_y = 3;
-    board->ghosts[0].passo = 0;
-    board->ghosts[0].waiting = 0;
-    board->ghosts[0].current_move = 0;
-    board->ghosts[0].n_moves = 16;
-    for (int i = 0; i < 8; i++) {
-        board->ghosts[0].moves[i].command = 'D';
-        board->ghosts[0].moves[i].turns = 1; 
-    }
-    for (int i = 8; i < 16; i++) {
-        board->ghosts[0].moves[i].command = 'A';
-        board->ghosts[0].moves[i].turns = 1; 
-    }
-
-    // Ghost 1
-    board->board[2 * board->width + 4].content = 'M'; // Monster
-    board->ghosts[1].pos_x = 4;
-    board->ghosts[1].pos_y = 2;
-    board->ghosts[1].passo = 1;
-    board->ghosts[1].waiting = 1;
-    board->ghosts[1].current_move = 0;
-    board->ghosts[1].n_moves = 1;
-    board->ghosts[1].moves[0].command = 'R'; // Random
-    board->ghosts[1].moves[0].turns = 1; 
-    */
-
     for (int i = 0; i < board->n_ghosts; i++) {
         board->board[info[i].pos_y * board->width + info[i].pos_x].content = 'M'; // Monster
         board->ghosts[i].pos_x = info[i].pos_x;
@@ -393,12 +374,15 @@ int load_ghost(board_t* board, pac_ghost_info *info) {
         board->ghosts[i].passo = info[i].passo;
         board->ghosts[i].waiting = 0;
         board->ghosts[i].current_move = 0;
-
+        board->ghosts[i].n_moves = info[i].n_moves;
+        //int j =  board->ghosts[i].n_moves;
         // Copy moves
         int move_count = 0;
-        while (move_count < MAX_MOVES && info[i].moves[move_count].command != '\0') {
-            board->ghosts[i].moves[move_count] = info[i].moves[move_count];
+        debug("maxmoes: %d\n", MAX_MOVES);
+        while (move_count < MAX_MOVES && info[i].moves[move_count].command != '\0' && move_count < info[i].n_moves) {
+            board->ghosts[i].moves[move_count] = info[i].moves[move_count]; //isto ta mal feito
             move_count++;
+            debug("movecount: %d", move_count);
         }
         board->ghosts[i].n_moves = move_count;
     }
