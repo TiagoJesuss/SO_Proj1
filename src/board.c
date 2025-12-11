@@ -430,13 +430,12 @@ int load_level(board_t *board, int points, level_info *info) {
 
     if (info->has_pacman) strcpy(board->pacman_file, info->pacman_file);
 
-    board->board = calloc(board->width * board->height, sizeof(board_pos_t));
+    //board->board = calloc(board->width * board->height, sizeof(board_pos_t));
     board->pacmans = calloc(board->n_pacmans, sizeof(pacman_t));
     board->ghosts = calloc(board->n_ghosts, sizeof(ghost_t));
 
     strcpy(board->level_name, info->file_name);
-    //board->board = info->board;
-    memcpy(board->board, info->board, board->width * board->height * sizeof(board_pos_t));
+    board->board = info->board;
 
     for (int i = 0; i < board->width * board->height; i++) {
         pthread_rwlock_init(&board->board[i].lock, NULL);
