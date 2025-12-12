@@ -67,9 +67,9 @@ void *pacman_thread(void *arg) {
 
     while (pacman->alive) {
         command_t *play;
+        command_t c;
 
         if (pacman->n_moves == 0) { // Se for entrada do usuário
-            command_t c;
             pthread_rwlock_rdlock(ncurses_lock);
             c.command = get_input();
             pthread_rwlock_unlock(ncurses_lock);
@@ -80,7 +80,6 @@ void *pacman_thread(void *arg) {
             c.turns = 1;
             play = &c;
         } else { // Movimentos predefinidos
-            command_t c;
             pthread_rwlock_rdlock(ncurses_lock);
             c.command = get_input();
             pthread_rwlock_unlock(ncurses_lock);
@@ -371,6 +370,19 @@ int read_dir(char *argv, level_info *level_info) {
     return x;
 }
 
+void pacman_thread_args_init(pacman_thread_args_t *args, board_t *game_board, int *result, bool *leave_thread, pthread_rwlock_t *lock) {
+    args->game_board = game_board;
+    args->result = result;
+    args->leave_thread = leave_thread;
+    args->lock = lock;
+}
+
+void ghost_thread_args_init(ghost_thread_args_t *args, board_t *game_board, int ghost_index, bool *leave_thread) {
+    args->game_board = game_board;
+    args->ghost_index = ghost_index;
+    args->leave_thread = leave_thread;
+}
+
 int main(int argc, char** argv) {
     if (argc != 2) {
         printf("Usage: %s <level_directory>\n", argv[0]);
@@ -381,8 +393,6 @@ int main(int argc, char** argv) {
     int n_levels = read_dir(argv[1], level_info);
     // Random seed for any random movements
     srand((unsigned int)time(NULL));
-
-    
 
     terminal_init();
     //pthread_mutex_t mut = PTHREAD_MUTEX_INITIALIZER;
@@ -399,10 +409,7 @@ int main(int argc, char** argv) {
     bool leave_thread = false;
 
     pacman_thread_args_t pacman_args;
-    pacman_args.result = &result;
-    pacman_args.leave_thread = &leave_thread;
-    pacman_args.game_board = &game_board;
-    pacman_args.lock = &l;
+    pacman_thread_args_init(&pacman_args, &game_board, &result, &leave_thread, &l);
     pthread_t pacman_tid;
 
     game_board.ncurses_lock = &ncurses_lock;
@@ -415,15 +422,8 @@ int main(int argc, char** argv) {
     pthread_t ghost_tids[MAX_GHOSTS];
     while (!end_game) {
         load_level(&game_board, accumulated_points, &level_info[lvl]);
-        if (level_info[lvl].has_pacman){
-            nodelay(stdscr, TRUE);
-        }else{
-            timeout(150);
-        }
         for (int i = 0; i < game_board.n_ghosts; i++) {
-            ghost_args[i].game_board = &game_board;
-            ghost_args[i].ghost_index = i;
-            ghost_args[i].leave_thread = &leave_thread;
+            ghost_thread_args_init(&ghost_args[i], &game_board, i, &leave_thread);
         }
         draw_board(&game_board, DRAW_MENU);
         refresh_screen();
@@ -454,7 +454,6 @@ int main(int argc, char** argv) {
                     screen_refresh(&game_board, DRAW_WIN);
                     end_game = true;
                     if (hasBackup){
-                        screen_refresh(&game_board, DRAW_WIN);
                         _exit(2);
                     }
                 } else {
