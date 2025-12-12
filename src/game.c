@@ -512,6 +512,10 @@ int main(int argc, char** argv) {
         unload_level(&game_board);
     }
     
+    for (int i = lvl + 1; i < n_levels; i++) {
+        free(level_info[i].board);
+    }
+
     terminal_cleanup();
 
     close_debug_file();
