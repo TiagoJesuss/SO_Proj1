@@ -18,7 +18,7 @@ int terminal_init() {
     keypad(stdscr, TRUE);
 
     // Make getch() non-blocking (return ERR if no input)
-    //nodelay(stdscr, TRUE); // Uncomment if non-blocking input is desired
+    nodelay(stdscr, TRUE); // Uncomment if non-blocking input is desired
     //timeout(150); // Set getch() to wait 200 ms for input
 
     // Hide the cursor
