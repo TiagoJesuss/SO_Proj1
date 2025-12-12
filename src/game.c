@@ -400,7 +400,7 @@ int main(int argc, char** argv) {
     
     int accumulated_points = 0;
     bool end_game = false;
-    board_t game_board;
+    board_t game_board = {0};
     int lvl = 0;
     bool hasBackup = false;
     int result;
